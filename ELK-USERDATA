@@ -1,0 +1,63 @@
+#!/bin/bash
+sudo su
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install openjdk-11-jdk wget apt-transport-https curl gnupg2 -y
+wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch --no-check-certificate | sudo apt-key add -
+echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-7.x.list
+sudo apt-get update
+sudo apt-get install elasticsearch -y
+cd /etc/elasticsearch/
+sudo rm -rf elasticsearch.yml
+sudo cat <<EOF > elasticsearch.yml
+path.data: /var/lib/elasticsearch
+path.logs: /var/log/elasticsearch
+network.host: 0.0.0.0
+http.port: 9200
+discovery.type: single-node
+EOF
+sudo systemctl start elasticsearch
+sudo systemctl enable elasticsearch
+sudo systemctl restart elasticsearch
+
+sudo apt-get install logstash
+sudo cat <<EOF > input1.conf
+input {
+beats {
+port => 5044
+}
+}
+EOF
+sudo mv input1.conf /etc/logstash/conf.d/
+sudo cat <<EOF > elasticsearch-output.conf
+output {
+elasticsearch {
+hosts => ["0.0.0.0:9200"]
+manage_template => false
+index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
+}
+}
+EOF
+sudo mv elasticsearch-output.conf /etc/logstash/conf.d/
+sudo systemctl start logstash
+sudo systemctl enable logstash
+sudo apt-get install kibana
+cd /etc/kibana/
+sudo rm -rf kibana.yml
+sudo cat <<EOF > kibana.yml
+server.port: 5601
+server.host: "0.0.0.0"
+elasticsearch.hosts: ["http://0.0.0.0:9200"]
+EOF
+cd ..
+cd ..
+sudo systemctl start kibana
+sudo systemctl enable kibana
+sudo systemctl restart kibana
+sudo apt-get install filebeat -y
+sudo systemctl start filebeat
+sudo systemctl enable filebeat
+sudo systemctl restart filebeat
+
+filebeat setup --index-management -E output.logstash.enabled=false -E 'output.elasticsearch.hosts=["0.0.0.0:9200"]'
+cd ~
